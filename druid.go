@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"io/ioutil"
 	"fmt"
+	"os/exec"
+	"strings"
 )
 
 type DruidClient struct {
@@ -32,6 +34,7 @@ type DruidClient struct {
 	druidRefreshTicker *time.Ticker
 	druidGroupList     map[string]bool
 	druidGroupLock     sync.RWMutex
+	druidOverlord      string
 }
 
 type DruidState struct {
@@ -81,8 +84,8 @@ func (druidClient *DruidClient) Stop() {
 
 func (druidClient *DruidClient) getSupervisors() ([]string, error) {
 	//get supervisors from overlord
-	log.Infof("supervisor url: http://"+druidClient.app.Config.Druid[druidClient.cluster].DruidOverlord+"/druid/indexer/v1/supervisor")
-	response, err := http.Get("http://"+druidClient.app.Config.Druid[druidClient.cluster].DruidOverlord+"/druid/indexer/v1/supervisor")
+	log.Infof("supervisor url: http://"+druidClient.druidOverlord+":"+druidClient.app.Config.Druid[druidClient.cluster].DruidOverlordPort+"/druid/indexer/v1/supervisor")
+	response, err := http.Get("http://"+druidClient.druidOverlord+":"+druidClient.app.Config.Druid[druidClient.cluster].DruidOverlordPort+"/druid/indexer/v1/supervisor")
 
 	if err != nil {
 		log.Errorf("Error in getting supervisors from Druid API: %s", err.Error())
@@ -109,7 +112,7 @@ func (druidClient *DruidClient) getSupervisors() ([]string, error) {
 
 func (druidClient *DruidClient) getSupervisorOffset(supervisorId string) (string, map[string]interface{}, string, error) {
 	//get status from overlord
-	response, err := http.Get("http://"+druidClient.app.Config.Druid[druidClient.cluster].DruidOverlord+"/druid/indexer/v1/supervisor/"+supervisorId+"/status")
+	response, err := http.Get("http://"+druidClient.druidOverlord+":"+druidClient.app.Config.Druid[druidClient.cluster].DruidOverlordPort+"/druid/indexer/v1/supervisor/"+supervisorId+"/status")
 	if err != nil {
 		log.Errorf("Error in getting offset status from Druid API: %s"+err.Error())
 		return "", nil, "", err
@@ -179,9 +182,19 @@ func (druidClient *DruidClient) getOffsetsForConsumerGroupFromDruidAPI(consumerG
 				Offset:    int64(o),
 			}
 			timeoutSendOffset(druidClient.app.Storage.offsetChannel, partitionOffset, 1)
+			fmt.Println("Sync Druid offset: ", partitionOffset.Group, partitionOffset.Topic, partitionOffset.Partition, partitionOffset.Offset, partitionOffset.Timestamp)
 			log.Debugf("Sync Druid offset: [%s,%s,%v]::[%v,%v]\n", partitionOffset.Group, partitionOffset.Topic, partitionOffset.Partition, partitionOffset.Offset, partitionOffset.Timestamp)
 		}			
 	}
+}
+
+func (druidClient *DruidClient) setDruidOverlord() {
+	out, err := exec.Command("python", "druidcoordinator.py", "--cluster-tag-value", druidClient.cluster).Output()
+	if err != nil {
+	    log.Errorf("Cannot get Druid overlord ip for %s: %s", druidClient.cluster, err)
+	    return
+    }
+    druidClient.druidOverlord = strings.Replace(string(out), "\n", "", -1)
 }
 
 func (druidClient *DruidClient) refreshConsumerGroups() {
@@ -193,6 +206,8 @@ func (druidClient *DruidClient) refreshConsumerGroups() {
 		druidClient.druidGroupList[consumerGroup] = false
 	}
 
+	// update overlord ip 
+	druidClient.setDruidOverlord()
 	consumerGroups, err := druidClient.getSupervisors()
 	if err != nil {
 		// Can't read the consumers path. Bail for now

@@ -166,12 +166,10 @@ func burrowMain() int {
 	// Notifiers are started in a goroutine if we get the ZK lock
 	go StartNotifiers(appContext)
 	defer StopNotifiers(appContext)
-	fmt.Println("start notifier")
 
 	// Register signal handlers for exiting
 	exitChannel := make(chan os.Signal, 1)
 	signal.Notify(exitChannel, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGSTOP, syscall.SIGTERM)
-	fmt.Println("signal handlers registered")
 
 	// Wait until we're told to exit
 	<-exitChannel

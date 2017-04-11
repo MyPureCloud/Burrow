@@ -67,7 +67,7 @@ type BurrowConfig struct {
 		Zookeepers    []string `gcfg:"zookeeper"`
 		ZookeeperPort int      `gcfg:"zookeeper-port"`
 		ZookeeperPath []string `gcfg:"zookeeper-path"`
-		DruidOverlord string `gcfg:"druid-overlord"`
+		DruidOverlordPort string `gcfg:"druid-overlord-port"` 
 	}
 	Tickers struct {
 		BrokerOffsets int `gcfg:"broker-offsets"`
